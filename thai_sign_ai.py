@@ -1,4 +1,4 @@
-# thai_sign_ai.py
+# thai_sign_ai_with_keypoints.py
 
 import os
 import cv2
@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, models, transforms
 from torch.utils.data import DataLoader
+import mediapipe as mp
 
 ########################################
 # STEP 0: Convert all .jpg to .jpeg
@@ -102,7 +103,29 @@ def train_model(num_epochs=5):
     print("✅ Model saved as thai_sign_model.pth")
 
 ########################################
-# STEP 4: Real-time Webcam Prediction
+# STEP 4: Hand Keypoints & Fingers Up
+########################################
+mp_hands = mp.solutions.hands
+mp_draw = mp.solutions.drawing_utils
+TIP_IDS = [4, 8, 12, 16, 20]  # Thumb, Index, Middle, Ring, Pinky
+
+def fingers_up(hand_landmarks):
+    fingers = []
+    # Thumb
+    if hand_landmarks.landmark[TIP_IDS[0]].x < hand_landmarks.landmark[TIP_IDS[0]-1].x:
+        fingers.append(1)
+    else:
+        fingers.append(0)
+    # Other fingers
+    for id in range(1,5):
+        if hand_landmarks.landmark[TIP_IDS[id]].y < hand_landmarks.landmark[TIP_IDS[id]-2].y:
+            fingers.append(1)
+        else:
+            fingers.append(0)
+    return fingers
+
+########################################
+# STEP 5: Real-time Webcam Prediction
 ########################################
 def run_webcam():
     # Load trained model
@@ -117,28 +140,39 @@ def run_webcam():
 
     cap = cv2.VideoCapture(0)
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+    with mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.5) as hands:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-        # Convert frame
-        img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-        img_tensor = transform_infer(img_pil).unsqueeze(0).to(device)
+            img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = hands.process(img_rgb)
 
-        with torch.no_grad():
-            outputs = model(img_tensor)
-            _, pred = outputs.max(1)
-            label = class_names[pred.item()].replace("_", " ")  # readable
+            # Draw hand landmarks
+            if results.multi_hand_landmarks:
+                for handLms in results.multi_hand_landmarks:
+                    mp_draw.draw_landmarks(frame, handLms, mp_hands.HAND_CONNECTIONS)
+                    # Fingers up
+                    finger_state = fingers_up(handLms)
+                    cv2.putText(frame, f"Fingers: {finger_state}", (10,100),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,0,0), 2)
 
-        # Display result
-        cv2.putText(frame, f"Prediction: {label}", (10,50),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
+            # CNN Prediction
+            img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            img_tensor = transform_infer(img_pil).unsqueeze(0).to(device)
+            with torch.no_grad():
+                outputs = model(img_tensor)
+                _, pred = outputs.max(1)
+                label = class_names[pred.item()].replace("_", " ")
 
-        cv2.imshow("Thai Sign Recognition", frame)
+            cv2.putText(frame, f"Prediction: {label}", (10,50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
 
-        if cv2.waitKey(1) & 0xFF == 27:  # ESC to quit
-            break
+            cv2.imshow("Thai Sign Recognition", frame)
+
+            if cv2.waitKey(1) & 0xFF == 27:
+                break
 
     cap.release()
     cv2.destroyAllWindows()
@@ -147,8 +181,13 @@ def run_webcam():
 # MAIN
 ########################################
 if __name__ == "__main__":
-    if not os.path.exists("thai_sign_model.pth"):
-        print("🚀 Training model...")
-        train_model(num_epochs=1)   # increase for better accuracy
+    if os.path.exists("thai_sign_model.pth"):
+        print("🔄 Loading existing model for continued training...")
+        model.load_state_dict(torch.load("thai_sign_model.pth", map_location=device))
+    
+    print("🚀 Training model...")
+    train_model(num_epochs=1)   # continue training
+    
     print("📷 Starting webcam...")
     run_webcam()
+
