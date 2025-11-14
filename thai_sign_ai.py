@@ -7,6 +7,25 @@ import tensorflow as tf
 import pickle
 from PIL import Image, ImageDraw, ImageFont
 
+# Thai character mapping
+thai_mapping = {
+    'bor': 'บ',
+    'dor': 'ด',
+    'for': 'ฟ',
+    'hor': 'ห',
+    'ko': 'ก',
+    'lor': 'ล',
+    'mor': 'ม',
+    'nor': 'น',
+    'or': 'อ',
+    'por': 'ป',
+    'rao': 'ร',
+    'sor': 'ส',
+    'tor': 'ต',
+    'wor': 'ว',
+    'yor': 'ย'
+}
+
 try:
     import mediapipe as mp
     mp_hands = mp.solutions.hands
@@ -83,7 +102,7 @@ def run_webcam_with_keras(keras_model, class_names, use_mediapipe=True, required
     mean = np.array([0.485, 0.456, 0.406])
     std = np.array([0.229, 0.224, 0.225])
 
-    print("[INFO] Starting webcam (Press ESC to quit, R to reset, F to confirm, C to copy word)")
+    print("[INFO] Starting webcam (Press ESC to quit, R to reset, F to confirm, C to copy word, D to delete last word)")
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -138,7 +157,8 @@ def run_webcam_with_keras(keras_model, class_names, use_mediapipe=True, required
         draw.text((10, 30), f"สัญลักษณ์: {last_char}", font=thai_font, fill=(0, 255, 0))
         draw.text((10, 70), f"รอตรวจสอบ: {stable_char if stable_char else '-'}", font=thai_font, fill=(0, 255, 255))
         draw.text((10, 110), f"คำ: {current_word}", font=thai_font, fill=(255, 255, 0))
-        draw.text((10, h - 50), "F=ยืนยัน | R=รีเซ็ท | C=คัดลอก | ESC=ออก", font=thai_font, fill=(200, 200, 200))
+
+        draw.text((10, h - 50), "F=ยืนยัน | R=รีเซ็ท | C=คัดลอก | D=ลบ | ESC=ออก", font=thai_font, fill=(200, 200, 200))
         frame_out = cv2.cvtColor(np.array(frame_pil), cv2.COLOR_RGB2BGR)
 
         cv2.imshow("Thai Sign Recognition", frame_out)
@@ -157,13 +177,18 @@ def run_webcam_with_keras(keras_model, class_names, use_mediapipe=True, required
                 except Exception:
                     print("Copy failed.")
         elif key == ord('f'):  # Press F to confirm
-            if stable_char:
-                current_word += stable_char
-                print(f"[CONFIRM] Added '{stable_char}' -> {current_word}")
+            if stable_char and stable_char in thai_mapping:
+                thai_char = thai_mapping[stable_char]
+                current_word += thai_char
+                print(f"[CONFIRM] Added '{thai_char}' -> {current_word}")
                 stable_char = None
                 stable_frames = 0
             else:
                 print("[INFO] No sign to confirm. Hold a sign for 8 frames first.")
+        elif key == ord('d'):  # Press D to delete last character
+            if current_word:
+                current_word = current_word[:-1]  # Remove last character
+                print(f"[DELETE] Last character removed -> {current_word}")
 
     cap.release()
     cv2.destroyAllWindows()
@@ -192,7 +217,7 @@ if __name__ == "__main__":
 
     # Run webcam demo
     print("\n[INFO] Starting Thai Sign Recognition Webcam Demo...")
-    print("[INFO] Controls: ESC=quit, R=reset word, F=confirm, C=copy to clipboard")
+    print("[INFO] Controls: ESC=quit, R=reset word, F=confirm, C=copy to clipboard, D=delete last character")
     try:
         run_webcam_with_keras(model, class_names, use_mediapipe=mp_available)
     except Exception as e:
