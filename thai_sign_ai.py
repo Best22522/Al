@@ -18,7 +18,7 @@ thai_mapping = {
     'mor': 'ม',
     'nor': 'น',
     'or': 'อ',
-    'por': 'ป',
+    'por': 'พ',
     'rao': 'ร',
     'sor': 'ส',
     'tor': 'ต',
